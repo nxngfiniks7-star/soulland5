@@ -1,0 +1,46 @@
+name: Build jar
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Install Gradle 4.9
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-4.9-bin.zip
+          unzip -q gradle-4.9-bin.zip -d "$HOME"
+          echo "$HOME/gradle-4.9/bin" >> "$GITHUB_PATH"
+      - name: Build
+        run: |
+          unzip -q SoulLand-github.zip -d proj
+          cd proj
+          sed -i 's/setUnlocalizedName/setTranslationKey/; s/getTabIconItem/createIcon/' src/main/java/com/soulland/mod/ModItems.java
+          sed -i 's/lengthVector()/length()/' src/main/java/com/soulland/mod/SoulSkills.java
+          sed -i 's/SoundEvents.BLOCK_BEACON_ACTIVATE/SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP/; s/SoundEvents.BLOCK_BEACON_DEACTIVATE/SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP/' src/main/java/com/soulland/mod/SoulSkills.java
+          for v in 2847 2855 2859 2860 2864; do
+            sed -i "s/14\.23\.5\.[0-9]*/14.23.5.$v/" build.gradle
+            echo "=== ลอง Forge 14.23.5.$v ==="
+            if gradle setupCIWorkspace build --no-daemon > build.log 2>&1; then
+              tail -5 build.log
+              exit 0
+            fi
+            if grep -q "error:" build.log; then
+              echo "=== COMPILE ERRORS (Forge $v) ==="
+              grep "error:" build.log | sed 's|.*/mod/||' | sort -u | head -40
+              grep -A1 "symbol:" build.log | grep "symbol:" | sort -u | head -20
+              exit 1
+            fi
+            echo "=== ล้มเหลวที่ $v (ไม่ใช่ error คอมไพล์) ==="
+            tail -15 build.log
+          done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoulLand-jar
+          path: proj/build/libs/*.jar
